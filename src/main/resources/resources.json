@@ -1,0 +1,6 @@
+[
+  {
+    "tableName":"user",
+    "type":"Integer"
+  }
+]
