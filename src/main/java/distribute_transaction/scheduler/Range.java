@@ -12,30 +12,30 @@ public class Range<T extends Comparable<T>>{
     //当前请求范围所属事务
     public Transaction transaction;
     //请求范围的锁类型
-    public Lock lockType;
+    public Lock lockModel;
 
     //要封锁的表名
     public String tableName;
 
-    public Range(T left, T right, Lock lockType,String tableName){
+    public Range(T left, T right, Lock lockModel,String tableName){
         this.left = left;
         this.right = right;
-        this.lockType = lockType;
+        this.lockModel = lockModel;
         this.tableName = tableName;
     }
 
-    public Range(Transaction transaction, T left, T right, Lock lockType) {
+    public Range(Transaction transaction, T left, T right, Lock lockModel) {
         this.left = left;
         this.right = right;
         this.transaction = transaction;
-        this.lockType = lockType;
+        this.lockModel = lockModel;
     }
 
-    public Range(Transaction transaction, T left, T right, Lock lockType, String tableName) {
+    public Range(Transaction transaction, T left, T right, Lock lockModel, String tableName) {
         this.left = left;
         this.right = right;
         this.transaction = transaction;
-        this.lockType = lockType;
+        this.lockModel = lockModel;
         this.tableName = tableName;
     }
 
@@ -51,7 +51,7 @@ public class Range<T extends Comparable<T>>{
             return false;
         Range<T> range = (Range<T>) obj;
         if(range.left.compareTo(left)==0&&range.right.compareTo(right)==0
-                &&range.tableName.equals(tableName)&&lockType.equals(range.lockType))
+                &&range.tableName.equals(tableName)&&lockModel.equals(range.lockModel))
             return true;
         return false;
     }
@@ -65,7 +65,7 @@ public class Range<T extends Comparable<T>>{
         String res = transaction==null ? "transaction:null" : "transaction:"+transaction.getTransactionId();
         res += ";   left:"+left;
         res += ";   right:"+right;
-        res += ";   lockType:"+lockType;
+        res += ";   lockModel:"+lockModel;
         return res;
     }
 }
