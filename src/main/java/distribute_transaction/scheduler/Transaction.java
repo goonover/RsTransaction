@@ -18,7 +18,7 @@ public class Transaction {
     //事务申请的资源范围
     private List<Range> applyRanges;
     //事务的状态
-    private State state;
+    protected State state;
     //请求原语
     private String requestStr;
 
@@ -48,6 +48,10 @@ public class Transaction {
 
     public List<Range> getApplyRanges() {
         return applyRanges;
+    }
+
+    public String getRequestStr(){
+        return this.requestStr;
     }
 
 }

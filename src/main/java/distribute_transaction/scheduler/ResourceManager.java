@@ -51,16 +51,16 @@ class ResourceManager {
     }
 
 
-    void schedule(Transaction transaction){
-        List<Range> keyRanges = transaction.getRequestRange();
-        for(Range keyRange:keyRanges){
-            TableResource resource = tableResourceMap.get(keyRange.getTableName());
-            if(resource!=null) {
-                resource.applyFor(keyRange);
+    void schedule(TransactionImpl transaction){
+        List<Range> keyRanges = transaction.getApplyRanges();
+        while (keyRanges.size()>0){
+            Range range = keyRanges.remove(0);
+            TableResource resource = tableResourceMap.get(range.getTableName());
+            if(resource!=null){
+                resource.applyFor(range);
             }
-            transaction.afterApply(keyRange);
         }
-        transaction.afterAllocated();
+        transaction.firstAllocatedCompleted();
     }
 
     TableResource getTableResource(String resourceName){

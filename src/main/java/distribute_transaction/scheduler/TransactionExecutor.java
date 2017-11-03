@@ -49,6 +49,7 @@ class TransactionExecutor extends Thread{
     private void submitTask(final Transaction transaction){
         executorService.submit(new Runnable() {
             public void run() {
+                System.out.println(total.get()+":"+transaction.getRequestStr());
                 //transaction.testSleep();
                 /*System.out.println("transaction "+transaction.getTransactionId()+": start");
                 try {
@@ -61,7 +62,7 @@ class TransactionExecutor extends Thread{
                     System.out.println(System.currentTimeMillis()-startTime);
                     System.out.println("finish");
                 }*/
-                if(total.incrementAndGet()==100000){
+                if(total.incrementAndGet()==10000){
                     System.out.println(System.currentTimeMillis()-startTime);
                     System.out.println("finish");
                 }

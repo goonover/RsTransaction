@@ -42,7 +42,7 @@ public class TableResource<T extends Comparable<T>> {
      * @param indexOfPre    前继结点
      */
     private void applyResourceForRange(ApplyRange<T> newApplyRange, int indexOfPre) {
-        ApplyRange<T> preRange = lastApplyRanges.get(indexOfPre);
+        ApplyRange<T> preRange = indexOfPre>=0 ? lastApplyRanges.get(indexOfPre):null;
         //与前继结点存在重合
         if(isValidRange(indexOfPre)&&overlap(preRange,newApplyRange)){
             //新申请范围在前继结点里面
@@ -91,7 +91,7 @@ public class TableResource<T extends Comparable<T>> {
                 break;
             }
         }
-        lastApplyRanges.add(insertIndex,newApplyRange);
+        lastApplyRanges.add(insertIndex, newApplyRange);
     }
 
     //判断两个范围是否有重合
@@ -118,6 +118,8 @@ public class TableResource<T extends Comparable<T>> {
      * @return
      */
     private boolean isValidRange(int indexOfRange){
+        if(indexOfRange<0)
+            return false;
         ApplyRange<T> validateRange = lastApplyRanges.get(indexOfRange);
         if(validateRange.shouldRelease()){
             lastApplyRanges.remove(indexOfRange);

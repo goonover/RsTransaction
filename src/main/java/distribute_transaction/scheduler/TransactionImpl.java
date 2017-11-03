@@ -73,9 +73,25 @@ class TransactionImpl extends Transaction{
      */
     private boolean fireTransactionCheck(){
         if(!firstAllocated&&waitingSet.isEmpty()){
-            scheduler.fireTransaction(this);
+            fireTransaction();
             return true;
         }
         return false;
+    }
+
+    /**
+     * 事务执行完成，释放所有资源并更新事务状态
+     */
+    void complete(){
+        while (acquiredList.size()>0){
+            ApplyRange holdingResource = acquiredList.remove(0);
+            holdingResource.unboundTransaction(this);
+        }
+        this.state = State.FINISH;
+    }
+
+    void fireTransaction(){
+        this.state = State.RUNNING;
+        scheduler.fireTransaction(this);
     }
 }

@@ -42,7 +42,7 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
         }
     }
     //在lockMode==S情况下会初始化
-    SharedInfo sharedInfo;
+    private SharedInfo sharedInfo;
 
     //包内使用
     ApplyRange(Range<T> range){
@@ -61,10 +61,10 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
 
     /**
      * 向有重叠区域的上一范围申请资源
-     * @param lastApplyRange
+     * @param lastApplyRange    上一重叠范围
      */
     void applyOnLastApplyRange(ApplyRange<T> lastApplyRange){
-        if(lastApplyRange.lockModel==X)
+        if(lockModel==X)
             applyOnExclusiveMode(lastApplyRange);
         else
             applyOnSharedMode(lastApplyRange);
@@ -91,7 +91,7 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
     private void applyOnSharedMode(ApplyRange<T> lastApplyRange){
         if(lastApplyRange.lockModel==X)
             applyOnExclusiveMode(lastApplyRange);
-        if(lastApplyRange.isRoot){
+        else if(lastApplyRange.isRoot){
             applyOnSharedRange(lastApplyRange);
             lastApplyRange.wasAppliedBySharedRange(this);
         }else{
@@ -115,18 +115,22 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
     /**
      * 在执行完毕后应该判断是否应该释放资源，返回值如为true，
      * 应该调用notifyAllWaitingRanges()
-     * @return
+     * @return  true表示该事务已经完成或者放弃，并且没有其他事务在此范围上等待
      */
     boolean shouldRelease(){
-       if(lockModel==X){
-           if(transaction==null)
-               return true;
-       }else{
-           //对于共享模式，必须等待前面的所有共享集合释放后才能释放
-           if(transaction==null&&sharedInfo.acquiredReadRanges.isEmpty())
-               return true;
-       }
-       return false;
+        if(isRoot) {
+            if (lockModel == X) {
+                if (transaction == null)
+                    return true;
+            } else {
+                //对于共享模式，必须等待前面的所有共享集合释放后才能释放
+                if (transaction == null && sharedInfo.acquiredReadRanges.isEmpty())
+                    return true;
+            }
+            return false;
+        }else{
+            return parent.shouldRelease();
+        }
     }
 
     /**
@@ -141,7 +145,7 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
 
     /**
      * 上一个范围被释放，当前范围可以将其从等待列表中移除
-     * @param parentRange
+     * @param parentRange   上一范围
      */
     private void acquireRange(ApplyRange<T> parentRange) {
         if(lockModel==S&&parentRange.lockModel==S){
@@ -208,8 +212,9 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
 
     //主动申请
     private void applyOnSharedRange(ApplyRange<T> applyRange){
-        if(applyRange.hasAcquiredAllResource())
+        if(applyRange.hasAcquiredAllResource()) {
             sharedInfo.acquiredReadRanges.add(applyRange);
+        }
         else
             sharedInfo.notAcquiredReadRanges.add(applyRange);
     }
@@ -217,8 +222,9 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
     //被申请
     private void wasAppliedBySharedRange(ApplyRange<T> applyRange){
         notifyList.add(applyRange);
-        if(!hasAcquiredAllResource())
+        if(!hasAcquiredAllResource()) {
             sharedInfo.waitingRanges.add(applyRange);
+        }
     }
 
 }

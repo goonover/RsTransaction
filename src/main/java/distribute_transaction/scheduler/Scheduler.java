@@ -1,5 +1,6 @@
 package distribute_transaction.scheduler;
 
+import java.util.HashSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -18,7 +19,7 @@ public class Scheduler extends Thread{
     //待调度事务队列
     BlockingQueue<Transaction> unAllocatedTransactions;
     //事务已经申请了资源，但还没完全得到所有资源，需要等待的队列
-    BlockingQueue<Transaction> allocatedTransactions;
+    HashSet<Transaction> allocatedTransactions;
     //成功获取到要执行所需的资源的事务队列
     BlockingQueue<Transaction> toExecuteTransactions;
     //运行失败或者调度失败的队列
@@ -61,7 +62,7 @@ public class Scheduler extends Thread{
 
     private void init(){
         unAllocatedTransactions = new ArrayBlockingQueue<Transaction>(unAllocatedSize);
-        allocatedTransactions = new ArrayBlockingQueue<Transaction>(allocatedSize);
+        allocatedTransactions = new HashSet<>();
         toExecuteTransactions = new ArrayBlockingQueue<Transaction>(toExecutedSize);
         failedTransactions = new LinkedBlockingQueue<Transaction>();
         releaseTransactions = new LinkedBlockingQueue<Transaction>();
@@ -82,7 +83,7 @@ public class Scheduler extends Thread{
         while (!shutdown.get()) {
             Transaction transactionToRelease;
             while ((transactionToRelease=releaseTransactions.poll())!=null){
-                transactionToRelease.complete();
+                ((TransactionImpl) transactionToRelease).complete();
             }
 
             Transaction transactionToAllocate = null;
@@ -91,8 +92,9 @@ public class Scheduler extends Thread{
             }
 
             if(transactionToAllocate!=null) {
-                transactionToAllocate.setScheduler(this);
-                resourceManager.schedule(transactionToAllocate);
+                TransactionImpl newTransaction = new TransactionImpl(transactionToAllocate.getTransactionId(),
+                        transactionToAllocate.getApplyRanges(),transactionToAllocate.getRequestStr(),this);
+                resourceManager.schedule(newTransaction);
             }
         }
     }
@@ -113,11 +115,7 @@ public class Scheduler extends Thread{
     }
 
     void waitTransaction(Transaction transaction){
-        try {
-            allocatedTransactions.put(transaction);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        allocatedTransactions.add(transaction);
     }
 
     void transactionCompleted(Transaction transaction){

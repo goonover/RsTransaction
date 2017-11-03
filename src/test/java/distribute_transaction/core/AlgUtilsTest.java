@@ -3,6 +3,7 @@ package distribute_transaction.core;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -99,6 +100,20 @@ public class AlgUtilsTest {
         List<Integer> subList = AlgUtils.listPartition(list,6);
         assertEquals(list.size(),6);
         assertEquals(subList.size(),1);
+    }
+
+    @Test
+    public void testHashSet(){
+        HashSet<Integer> intSet = new HashSet<>();
+        intSet.add(1);
+        intSet.add(5);
+        intSet.add(6);
+        List<Integer> removeList = new ArrayList<>();
+        for(Integer element:intSet){
+            removeList.add(element);
+        }
+        intSet.removeAll(removeList);
+        System.out.println(intSet);
     }
 
 }
