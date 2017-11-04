@@ -79,8 +79,7 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
             waitingSet.add(lastApplyRange);
             lastApplyRange.notifyList.add(this);
         }else{
-            waitingSet.add(lastApplyRange.parent);
-            lastApplyRange.parent.notifyList.add(this);
+            applyOnExclusiveMode(lastApplyRange.parent);
         }
     }
 

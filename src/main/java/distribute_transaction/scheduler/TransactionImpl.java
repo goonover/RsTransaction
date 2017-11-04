@@ -72,7 +72,7 @@ class TransactionImpl extends Transaction{
      * @return
      */
     private boolean fireTransactionCheck(){
-        if(!firstAllocated&&waitingSet.isEmpty()){
+        if(!firstAllocated&&waitingSet.isEmpty()&&state==State.WAITING){
             fireTransaction();
             return true;
         }

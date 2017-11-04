@@ -44,30 +44,37 @@ public class TableResource<T extends Comparable<T>> {
     private void applyResourceForRange(ApplyRange<T> newApplyRange, int indexOfPre) {
         ApplyRange<T> preRange = indexOfPre>=0 ? lastApplyRanges.get(indexOfPre):null;
         //与前继结点存在重合
-        if(isValidRange(indexOfPre)&&overlap(preRange,newApplyRange)){
-            //新申请范围在前继结点里面
-            if(newApplyRange.isWithin(preRange)){
-                //右边界相等时
-                if(newApplyRange.right.compareTo(preRange.right)==0){
-                    preRange.right = newApplyRange.left;
-                    newApplyRange.applyOnLastApplyRange(preRange);
-                    lastApplyRanges.add(indexOfPre+1,newApplyRange);
-                    return;
-                }else{
-                    //新申请的范围在原范围之内，需要将原范围分裂
-                    ApplyRange<T> childRange = preRange.newChildRange(newApplyRange.right,preRange.right);
-                    preRange.right = newApplyRange.left;
-                    newApplyRange.applyOnLastApplyRange(preRange);
-                    lastApplyRanges.add(++indexOfPre,newApplyRange);
-                    lastApplyRanges.add(++indexOfPre,childRange);
-                    return;
-                }
-            }else{
-                preRange.right = newApplyRange.left;
-                newApplyRange.applyOnLastApplyRange(preRange);
-            }
-        }
         int insertIndex = indexOfPre+1;
+
+        if(isValidRange(indexOfPre)) {
+            if (overlap(preRange, newApplyRange)) {
+                //新申请范围在前继结点里面
+                if (newApplyRange.isWithin(preRange)) {
+                    //右边界相等时
+                    if (newApplyRange.right.compareTo(preRange.right) == 0) {
+                        preRange.right = newApplyRange.left;
+                        newApplyRange.applyOnLastApplyRange(preRange);
+                        lastApplyRanges.add(indexOfPre + 1, newApplyRange);
+                        return;
+                    } else {
+                        //新申请的范围在原范围之内，需要将原范围分裂
+                        ApplyRange<T> childRange = preRange.newChildRange(newApplyRange.right, preRange.right);
+                        preRange.right = newApplyRange.left;
+                        newApplyRange.applyOnLastApplyRange(preRange);
+                        lastApplyRanges.add(++indexOfPre, newApplyRange);
+                        lastApplyRanges.add(++indexOfPre, childRange);
+                        return;
+                    }
+                } else {
+                    preRange.right = newApplyRange.left;
+                    newApplyRange.applyOnLastApplyRange(preRange);
+                }
+            }
+        }else{
+            if(preRange!=null)
+                insertIndex--;
+        }
+
         while (insertIndex<lastApplyRanges.size()){
             ApplyRange<T> currentRange = lastApplyRanges.remove(insertIndex);
             //移除所有失活结点
