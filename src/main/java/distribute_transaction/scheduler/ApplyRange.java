@@ -33,13 +33,6 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
         //在该结点上等待的读请求
         private List<ApplyRange<T>> waitingRanges = new ArrayList<>();
 
-        void notifyAllWaitingReadRanges(ApplyRange<T> range){
-            while (!waitingRanges.isEmpty()){
-                ApplyRange<T> waitingReadRange = waitingRanges.remove(0);
-                waitingReadRange.sharedInfo.notAcquiredReadRanges.remove(range);
-                waitingReadRange.sharedInfo.acquiredReadRanges.add(range);
-            }
-        }
     }
     //在lockMode==S情况下会初始化
     private SharedInfo sharedInfo;
@@ -147,24 +140,31 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
      * @param parentRange   上一范围
      */
     private void acquireRange(ApplyRange<T> parentRange) {
-        if(lockModel==S&&parentRange.lockModel==S){
-            sharedInfo.acquiredReadRanges.remove(parentRange);
-            if(shouldRelease())
-                notifyAllWaitingRanges();
-        }else {
-            waitingSet.remove(parentRange);
-            if (waitingSet.isEmpty()&&(lockModel==X||
-                    (lockModel==S&&sharedInfo.notAcquiredReadRanges.isEmpty()))) {
-                invokeTransaction();
+        if(transaction.getTransactionId()==4){
+            String s = "";
+        }
+        if(lockModel==S){
+            if(parentRange.lockModel==S){
+                sharedInfo.acquiredReadRanges.remove(parentRange);
+                if(shouldRelease()){
+                    notifyAllWaitingRanges();
+                }
+            }else{
+                waitingSet.remove(parentRange);
+                if(waitingSet.isEmpty()&&sharedInfo.notAcquiredReadRanges.isEmpty()){
+                    invokeTransaction();
+                    notifyAllWaitingSharedRange();
+                }
             }
+        }else{
+            waitingSet.remove(parentRange);
+            if(waitingSet.isEmpty())
+                invokeTransaction();
         }
     }
 
     //通知所有事务，其已经获取了该范围的资源
     private void invokeTransaction() {
-        if(lockModel==S){
-            sharedInfo.notifyAllWaitingReadRanges(this);
-        }
         ((TransactionImpl)transaction).acquireRange(this);
     }
 
@@ -206,7 +206,11 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
      * 当前范围的所申请资源是否已经全部得到
      */
     boolean hasAcquiredAllResource(){
-        return waitingSet.isEmpty();
+        if(lockModel==X){
+            return waitingSet.isEmpty();
+        }else{
+            return waitingSet.isEmpty()&&sharedInfo.notAcquiredReadRanges.isEmpty();
+        }
     }
 
     //主动申请
@@ -223,6 +227,34 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
         notifyList.add(applyRange);
         if(!hasAcquiredAllResource()) {
             sharedInfo.waitingRanges.add(applyRange);
+        }
+    }
+
+    /**
+     * 当读范围获取到资源时，需要通知在该读范围上等待的读范围
+     */
+    private void notifyAllWaitingSharedRange(){
+        if(lockModel!=S)
+            return;
+        List<ApplyRange<T>> waitingSharedRanges = sharedInfo.waitingRanges;
+        while (waitingSharedRanges.size()>0){
+            ApplyRange<T> waitingRange = waitingSharedRanges.remove(0);
+            waitingRange.wasNotifyByWaitingReadRange(this);
+        }
+    }
+
+    /**
+     * 共享范围被通知上一共享范围已获取资源
+     * @param notifyRange   上一共享范围
+     */
+    private void wasNotifyByWaitingReadRange(ApplyRange notifyRange){
+        if(lockModel!=S)
+            return;
+        sharedInfo.notAcquiredReadRanges.remove(notifyRange);
+        sharedInfo.acquiredReadRanges.add(notifyRange);
+        if(waitingSet.isEmpty()&&sharedInfo.notAcquiredReadRanges.isEmpty()) {
+            invokeTransaction();
+            notifyAllWaitingSharedRange();
         }
     }
 

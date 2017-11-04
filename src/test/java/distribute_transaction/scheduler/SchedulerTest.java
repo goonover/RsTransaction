@@ -5,9 +5,11 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.Console;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
@@ -97,42 +99,17 @@ public class SchedulerTest {
     public void replay() throws InterruptedException {
         List<Transaction> transactions = new ArrayList<>();
 
-        String lastError = "transaction:0;   left:16;   right:19;   lockModel:S\n" +
-                "transaction:1;   left:7;   right:18;   lockModel:X\n" +
-                "transaction:2;   left:14;   right:16;   lockModel:S\n" +
-                "transaction:3;   left:7;   right:18;   lockModel:S\n" +
-                "transaction:4;   left:10;   right:13;   lockModel:S\n" +
-                "transaction:5;   left:0;   right:8;   lockModel:X\n" +
-                "transaction:6;   left:19;   right:19;   lockModel:X\t\n" +
-                "transaction:7;   left:8;   right:8;   lockModel:S\tat \n" +
-                "transaction:8;   left:5;   right:12;   lockModel:X\n" +
-                "transaction:9;   left:3;   right:6;   lockModel:S\n" +
-                "transaction:0;   left:9;   right:9;   lockModel:X\n" +
-                "transaction:1;   left:16;   right:19;   lockModel:S\n" +
-                "transaction:2;   left:2;   right:5;   lockModel:X\n" +
-                "transaction:3;   left:12;   right:16;   lockModel:S\n" +
-                "transaction:4;   left:11;   right:12;   lockModel:S\n" +
-                "transaction:5;   left:6;   right:10;   lockModel:X\n" +
-                "transaction:6;   left:11;   right:17;   lockModel:S\n" +
-                "transaction:7;   left:7;   right:15;   lockModel:X\n" +
-                "transaction:8;   left:11;   right:14;   lockModel:X\n" +
-                "transaction:9;   left:16;   right:17;   lockModel:S\n" +
-                "transaction:0;   left:6;   right:9;   lockModel:S\n" +
-                "transaction:1;   left:5;   right:8;   lockModel:S\n" +
-                "transaction:2;   left:2;   right:13;   lockModel:X\n" +
-                "transaction:3;   left:13;   right:14;   lockModel:X\n" +
-                "transaction:4;   left:13;   right:14;   lockModel:X\n" +
-                "transaction:5;   left:14;   right:19;   lockModel:X\n" +
-                "transaction:6;   left:18;   right:18;   lockModel:S\n" +
-                "transaction:7;   left:13;   right:16;   lockModel:S\n" +
-                "transaction:8;   left:13;   right:18;   lockModel:X\n" +
-                "transaction:9;   left:2;   right:15;   lockModel:X\n";
+        String lastError = "transaction:0;   left:14;   right:16;   lockModel:X\n" +
+                "transaction:1;   left:5;   right:18;   lockModel:X\n" +
+                "transaction:2;   left:6;   right:12;   lockModel:X\n" +
+                "transaction:3;   left:8;   right:16;   lockModel:S\n" +
+                "transaction:4;   left:15;   right:18;   lockModel:S\n";
         transactions = ErrorReplyGenerator.generateTransaction(lastError,"user");
 
         for(Transaction transaction:transactions){
             scheduler.schedule(transaction);
         }
-        TimeUnit.SECONDS.sleep(10);
+        TimeUnit.SECONDS.sleep(1000);
     }
 
     @Test
@@ -141,7 +118,7 @@ public class SchedulerTest {
         List<Transaction> transactions = new ArrayList<Transaction>();
         List<Range> rangesList = new ArrayList<Range>();
         while (true) {
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 1000000; i++) {
                 int left = random.nextInt(20);
                 int right = left + random.nextInt(20 - left);
                 int lockType = random.nextInt(2);
@@ -183,6 +160,50 @@ public class SchedulerTest {
         }*/
         //TimeUnit.SECONDS.sleep(1000);
     }
+
+    public static void main(String[] args) throws InterruptedException {
+        Scheduler scheduler = new Scheduler();
+        scheduler.start();
+        Random random = new Random();
+        List<Transaction> transactions = new ArrayList<Transaction>();
+        List<Range> rangesList = new ArrayList<Range>();
+        Scanner scanner = new Scanner(System.in);
+        while (true) {
+            System.out.println("next round:");
+            String input = scanner.nextLine();
+            if(input.equalsIgnoreCase("n")){
+                for(Range range:rangesList){
+                    System.out.println(range);
+                }
+                break;
+            }else{
+                rangesList.clear();
+                transactions.clear();
+            }
+            for (int i = 0; i < 10; i++) {
+                int left = random.nextInt(20);
+                int right = left + random.nextInt(20 - left);
+                int lockType = random.nextInt(2);
+                Lock lock;
+                if (lockType == 1)
+                    lock = Lock.S;
+                else
+                    lock = Lock.X;
+                Range<Integer> range = new Range<Integer>(left, right, lock, "user");
+                List<Range> ranges = new ArrayList<Range>();
+                rangesList.add(range);
+                ranges.add(range);
+                Transaction transaction = new Transaction(i, ranges, "transaction" + i);
+                transactions.add(transaction);
+                //scheduler.schedule(transaction);
+            }
+
+            for (Transaction transaction : transactions) {
+                scheduler.schedule(transaction);
+            }
+        }
+    }
+
 
     @After
     public void tearDown(){
