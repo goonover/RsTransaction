@@ -115,12 +115,12 @@ public class SchedulerTest {
     @Test
     public void longTest() throws InterruptedException {
         Random random = new Random();
-        List<Transaction> transactions = new ArrayList<Transaction>();
-        List<Range> rangesList = new ArrayList<Range>();
+        //List<Transaction> transactions = new ArrayList<Transaction>();
+        //List<Range> rangesList = new ArrayList<Range>();
         while (true) {
             for (int i = 0; i < 1000000; i++) {
-                int left = random.nextInt(20);
-                int right = left + random.nextInt(20 - left);
+                int left = random.nextInt(200);
+                int right = left + random.nextInt(200 - left);
                 int lockType = random.nextInt(2);
                 Lock lock;
                 if (lockType == 1)
@@ -129,13 +129,13 @@ public class SchedulerTest {
                     lock = Lock.X;
                 Range<Integer> range = new Range<Integer>(left, right, lock, "user");
                 List<Range> ranges = new ArrayList<Range>();
-                rangesList.add(range);
+                //rangesList.add(range);
                 ranges.add(range);
                 Transaction transaction = new Transaction(i, ranges, "transaction" + i);
-                transactions.add(transaction);
-                //scheduler.schedule(transaction);
+                //transactions.add(transaction);
+                scheduler.schedule(transaction);
             }
-
+            /*
                 for (Transaction transaction : transactions) {
                     try {
                         scheduler.schedule(transaction);
@@ -151,8 +151,8 @@ public class SchedulerTest {
 
                 TimeUnit.SECONDS.sleep(1);
             rangesList.clear();
-            transactions.clear();
-            TimeUnit.SECONDS.sleep(2);
+            transactions.clear();*/
+            TimeUnit.SECONDS.sleep(100);
         }
 
         /*for(int i=0;i<transactions.size();i++){

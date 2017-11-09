@@ -140,9 +140,6 @@ class ApplyRange<T extends Comparable<T>> extends Range<T> implements Comparable
      * @param parentRange   上一范围
      */
     private void acquireRange(ApplyRange<T> parentRange) {
-        if(transaction.getTransactionId()==4){
-            String s = "";
-        }
         if(lockModel==S){
             if(parentRange.lockModel==S){
                 sharedInfo.acquiredReadRanges.remove(parentRange);
