@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
 
 import static distribute_transaction.execute.Generation.GenerationStatus.*;
 
@@ -24,7 +23,7 @@ class Generation {
     private Integer prevGenerationId;
     /**
      * 任务的状态{@link distribute_transaction.execute.RSFutureTask.RSFutureStatus}及其对应的任务列表
-     * key的可能值为NEW、RUNNING、NORMAL、ROLLINGBACK、ROLLBACKSUCCESS、ROLLBACKFAILED
+     * key的可能值为NEW、RUNNING、NORMAL、ROLLINGBACK、ROLLBACKSUCCESSFULLY、ROLLBACKFAILED
      */
     private HashMap<RSFutureTask.RSFutureStatus,List<RSFutureTask>> statusTaskMap;
 
@@ -105,13 +104,13 @@ class Generation {
 
     /**
      * 轮到当前generation执行，提交状态为NEW的所有的任务
+     * TODO:改善加锁方式，使锁的颗粒度更小
      */
-    void fire(){
-        synchronized (this){
-            status = RUNNING;
-            List<RSFutureTask> runningStatusTasks = new ArrayList<>();
-            statusTaskMap.put(RSFutureTask.RSFutureStatus.RUNNING,runningStatusTasks);
-        }
+    synchronized void fire(){
+        status = RUNNING;
+        List<RSFutureTask> runningStatusTasks = new ArrayList<>();
+        statusTaskMap.put(RSFutureTask.RSFutureStatus.RUNNING,runningStatusTasks);
+
         List<RSFutureTask> newStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NEW);
         List<RSFutureTask> runningStatusTask = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
         while (newStatusTasks.size()>0){
@@ -160,62 +159,164 @@ class Generation {
      * @param task 执行完成的任务
      */
     synchronized void taskDone(RSFutureTask task){
-        RSFutureTask.RSFutureStatus status = task.getStatus();
+        RSFutureTask.RSFutureStatus taskStatus = task.getStatus();
         //过滤正在执行状态的任务
-        if(status==RSFutureTask.RSFutureStatus.RUNNING||status== RSFutureTask.RSFutureStatus.NEW
-                ||status== RSFutureTask.RSFutureStatus.ROLLINGBACK)
+        if(taskStatus==RSFutureTask.RSFutureStatus.RUNNING||taskStatus== RSFutureTask.RSFutureStatus.NEW
+                ||taskStatus== RSFutureTask.RSFutureStatus.ROLLINGBACK)
             return;
-        List<RSFutureTask> runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
-        //正常执行的情况
-        if(runningTasks.remove(task)){
-            switch (task.getStatus()){
-                case NORMAL:
-                    taskDoneNormal(task);
-                    break;
-                case ABORT:
-                    taskDoneAbort(task);
-                    break;
-            }
+        switch (taskStatus){
+            case NORMAL:
+                taskDoneNormal(task);
+                break;
+            case ABORT:
+                taskDoneAbort(task);
+                break;
+            case ROLLBACKSUCCESSFULLY:
+                taskDoneRollbackSuccessfully(task);
+                break;
+            case ROLLBACKFAILED:
+                taskDoneRollbackFailed(task);
+                break;
+            default:
+                break;
         }
     }
 
-    //任务正常执行
+    /**
+     * 处理任务正常执行的情况
+     * @param task  成功执行的任务
+     */
     private void taskDoneNormal(RSFutureTask task){
-        if(this.status!=ABORT) {
-            //正常结束
-            if (!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.NORMAL)) {
-                List<RSFutureTask> normalTasks = new ArrayList<>();
-                statusTaskMap.put(RSFutureTask.RSFutureStatus.NORMAL, normalTasks);
-            }
-            statusTaskMap.get(RSFutureTask.RSFutureStatus.NORMAL).add(task);
-            List<RSFutureTask> runningTask = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
-            if (runningTask.size() == 0) {
-                if (status == RUNNING)
-                    status = SUCCEEDALL;
-                else if (status == COMPLETING)
-                    status = FINISHED;
-            }
-        }else{
-            UnitTask rollbackUnitTask = task.getUnitTask();
-            task = null;
-            RSFutureTask rollbackTask = generateRollbackFutureTask(rollbackUnitTask);
-            List<RSFutureTask> rollbackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
-            rollbackTasks.add(rollbackTask);
-            submitTask(rollbackTask);
+        //如果之前已有任务发起回滚，则无视其完成
+        if(status==ABORT)
+            return;
+
+        List<RSFutureTask> runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        if(!runningTasks.remove(task))
+            return;
+
+        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.NORMAL)){
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.NORMAL,new ArrayList<>());
+        }
+
+        List<RSFutureTask> normalTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NORMAL);
+        normalTasks.add(task);
+        //TODO:状态更新问题现在解决方案并不好，有待完善
+        if(runningTasks.size()==0){
+            if(status==RUNNING)
+                status = SUCCEEDALL;
+            else if(status==COMPLETING)
+                status = FINISHED;
         }
     }
 
-    //执行过程中出现了RSAbortException
+    /**
+     * 处理任务执行出现RSAbortException，表明事务需要回滚
+     * @param task  出现RSAbortException的任务
+     */
     private void taskDoneAbort(RSFutureTask task){
-        rollback();
+        if(status==ABORT)
+            return;
+
+        List<RSFutureTask> runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        if(!runningTasks.remove(task))
+            return;
+
+        status = ABORT;
+        UnitTask unitTask = task.getUnitTask();
+        taskRollback(unitTask);
+        rollback(true);
     }
 
-    private void submitRollbackTask(){
+    /**
+     * 处理执行回滚操作成功的情况
+     * @param task  执行回滚操作成功的任务
+     */
+    private void taskDoneRollbackSuccessfully(RSFutureTask task){
+        if(status!=ABORT)
+            throw new RuntimeException("generation's status is not abort,rollback task received!");
+        List<RSFutureTask> rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
+        if(!rollingBackTasks.remove(task)){
+            return;
+        }
 
+        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY)){
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY,new ArrayList<>());
+        }
+        List<RSFutureTask> rollingBackSuccessfully = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY);
+        rollingBackSuccessfully.add(task);
+        //TODO:处理全部任务已经完成rollback，通知上一generation进行rollback
     }
 
-    private void rollback(){
-        //TODO:implement rollback
+    /**
+     * 处理回滚任务执行失败的情况
+     * @param task  回滚任务执行失败
+     */
+    private void taskDoneRollbackFailed(RSFutureTask task){
+        if(status!=ABORT)
+            throw new RuntimeException("generation's status is not abort,rollback task received!");
+
+        if(!(statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK).remove(task)))
+            return;
+
+        task.rollbackFailed();
+        if(task.shouldRollback()){
+            task.rollbackReset();
+            submitTask(task);
+        }else{
+            if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLBACKFAILED))
+                statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKFAILED,new ArrayList<>());
+            List<RSFutureTask> rollbackFailedTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKFAILED);
+            rollbackFailedTasks.add(task);
+            //TODO:判断当前generation的rollback是否执行完成，进行下一阶段的rollback
+        }
+    }
+
+    private void taskRollback(UnitTask unitTask){
+        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLINGBACK)){
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLINGBACK,new ArrayList<>());
+        }
+
+        RSFutureTask rollbackFuture = generateRollbackFutureTask(unitTask);
+        List<RSFutureTask> rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
+        rollingBackTasks.add(rollbackFuture);
+        submitTask(rollbackFuture);
+    }
+
+    /**
+     * 有UnitTask在运行过程中捕捉到RSAbortException，发动回滚操作;
+     * 或者其他nextGeneration运行过程中出现回滚导致当前的generation回滚
+     */
+    void rollback(boolean innerInvoke){
+        if(innerInvoke){
+            innerInvokeRollback();
+        }else{
+            outerInvokeRollback();
+        }
+    }
+
+    private void innerInvokeRollback(){
+        List<RSFutureTask> runningTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.RUNNING);
+        while (runningTasks.size()>0){
+            RSFutureTask task = runningTasks.remove(0);
+            task.cancel(true);
+            taskRollback(task.getUnitTask());
+        }
+
+        List<RSFutureTask> normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
+        while (normalFinishedTasks!=null&&normalFinishedTasks.size()>0){
+            RSFutureTask task = normalFinishedTasks.remove(0);
+            taskRollback(task.getUnitTask());
+        }
+    }
+
+    private void outerInvokeRollback(){
+        this.status = ABORT;
+        List<RSFutureTask> normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
+        while (normalFinishedTasks!=null&&normalFinishedTasks.size()>0){
+            RSFutureTask task = normalFinishedTasks.remove(0);
+            taskRollback(task.getUnitTask());
+        }
     }
 
     /**
@@ -231,10 +332,6 @@ class Generation {
 
     Integer getGenerationId() {
         return generationId;
-    }
-
-    void setGenerationId(Integer generationId) {
-        this.generationId = generationId;
     }
 
     Integer getNextGenerationId() {

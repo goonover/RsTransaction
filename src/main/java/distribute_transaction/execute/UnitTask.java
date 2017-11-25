@@ -45,8 +45,12 @@ public abstract class UnitTask {
      * 回滚所有任务，回滚的实现通过调用rollback实现，使用者可以重载
      * rollback，实现自己的回滚函数
      */
-    public void rollback(){
+    public void rollback(){}
 
+    public void rollbackFailed(){}
+
+    public boolean shouldRollback(){
+        return false;
     }
 
     /**
