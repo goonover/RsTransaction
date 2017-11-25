@@ -83,10 +83,7 @@ class TransactionImpl extends Transaction{
      * 事务执行完成，释放所有资源并更新事务状态
      */
     void complete(){
-        while (acquiredList.size()>0){
-            ApplyRange holdingResource = acquiredList.remove(0);
-            holdingResource.unboundTransaction(this);
-        }
+        releaseAcquiredResource();
         this.state = State.FINISH;
     }
 

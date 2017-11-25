@@ -31,7 +31,7 @@ public class TransactionBookKeeping {
     boolean submitUnitTask(UnitTask task){
         //第一个任务
         if(maxGeneration==null){
-            Generation newGeneration = new Generation(task);
+            Generation newGeneration = new Generation(task,this);
             generations.put(task.getPriority(),newGeneration);
             maxGeneration = task.getPriority();
             fireGeneration(newGeneration);
@@ -45,7 +45,7 @@ public class TransactionBookKeeping {
             max.enqueue(task);
         }else{
             //当前的generation比最大的generation还要大
-            Generation newGeneration = new Generation(task);
+            Generation newGeneration = new Generation(task,this);
             newGeneration.setPrevGenerationId(maxGeneration);
             maxGeneration = newGeneration.getGenerationId();
             max.setNextGenerationId(newGeneration.getGenerationId());
@@ -60,12 +60,19 @@ public class TransactionBookKeeping {
         generation.fire();
     }
 
-    private void generationFinish(Generation generation){
-        Integer nextGenerationId = generation.getGenerationId();
-        if(nextGenerationId==null){
-            currentGeneration = null;
-        }else{
-            fireGeneration(generations.get(nextGenerationId));
-        }
+    void generationSucceedAll(Generation generation){
+
+    }
+
+    void generationFinished(Generation generation){
+
+    }
+
+    void generationRollbackSuccessfully(Generation generation){
+
+    }
+
+    void generationRollbackFailed(Generation generation){
+
     }
 }

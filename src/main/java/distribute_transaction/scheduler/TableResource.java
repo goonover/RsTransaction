@@ -17,7 +17,7 @@ public class TableResource<T extends Comparable<T>> {
         this.tableName = tableName;
     }
 
-    List<ApplyRange<T>> lastApplyRanges = new ArrayList<ApplyRange<T>>();
+    private List<ApplyRange<T>> lastApplyRanges = new ArrayList<ApplyRange<T>>();
 
     /**
      * 向资源表申请范围资源
@@ -80,8 +80,10 @@ public class TableResource<T extends Comparable<T>> {
             //移除所有失活结点
             if(currentRange.shouldRelease())
                 continue;
-            if(!overlap(newApplyRange,currentRange))
+            if(!overlap(newApplyRange,currentRange)) {
+                lastApplyRanges.add(insertIndex,currentRange);
                 break;
+            }
             /**
              * 对应着申请结点与后继结点的三种重叠情况，对于current.left == new.left的情况
              * 依然使用，这种情况被下面三种情况囊括了

@@ -1,11 +1,7 @@
 package distribute_transaction.execute;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 import static distribute_transaction.execute.Generation.GenerationStatus.*;
 
@@ -25,12 +21,14 @@ class Generation {
      * 任务的状态{@link distribute_transaction.execute.RSFutureTask.RSFutureStatus}及其对应的任务列表
      * key的可能值为NEW、RUNNING、NORMAL、ROLLINGBACK、ROLLBACKSUCCESSFULLY、ROLLBACKFAILED
      */
-    private HashMap<RSFutureTask.RSFutureStatus,List<RSFutureTask>> statusTaskMap;
+    private HashMap<RSFutureTask.RSFutureStatus,RSFutureTaskContainer> statusTaskMap;
 
     //当前generation的运行状态
     private volatile GenerationStatus status;
     //全局线程池
     private static ExecutorService executorService;
+    //当前generation所属的bookKeeping
+    private TransactionBookKeeping transactionBookKeeping;
 
     /**
      * generation的状态
@@ -49,24 +47,26 @@ class Generation {
         ABORT          //出现错误，需要回滚，可能由本代引起，也可能由子代引起
     }
 
-    Generation(UnitTask unitTask){
+    Generation(UnitTask unitTask,TransactionBookKeeping transactionBookKeeping){
         statusTaskMap = new HashMap<>();
+        this.transactionBookKeeping = transactionBookKeeping;
         status = NEW;
+        unitTask.setGeneration(this);
         RSFutureTask executeTask = generateFutureTask(unitTask);
-        List<RSFutureTask> newStatusTasks = new ArrayList<>();
-        newStatusTasks.add(executeTask);
+        RSFutureTaskContainer newTasksContainer = new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.NEW);
+        newTasksContainer.put(executeTask);
         generationId = unitTask.getPriority();
-        statusTaskMap.put(RSFutureTask.RSFutureStatus.NEW,newStatusTasks);
+        statusTaskMap.put(RSFutureTask.RSFutureStatus.NEW,newTasksContainer);
     }
 
     /**
-     * 把unit task加入到当代中
-     * 虽然waitingTasks采用的不是线程安全容器，但是事实上调用enqueue(task)和
-     * 调用execute()的线程应该为同一个线程，不存在线程问题，无须加锁
+     * 把unit task加入到当代中，为了在调用enqueue时，状态由RUNNING-------->ABORT
+     * 必须采用同步手段
      */
     synchronized boolean enqueue(UnitTask unitTask){
         if(nextGenerationId!=null)
             return false;
+        unitTask.setGeneration(this);
         RSFutureTask executeTask = generateFutureTask(unitTask);
         switch (status){
             case NEW:
@@ -85,37 +85,35 @@ class Generation {
     }
 
     private void enqueueNew(RSFutureTask task){
-        List<RSFutureTask> newStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NEW);
-        newStatusTasks.add(task);
+        RSFutureTaskContainer container = statusTaskMap.get(RSFutureTask.RSFutureStatus.NEW);
+        container.put(task);
     }
 
     private void enqueueRunning(RSFutureTask task){
-        List<RSFutureTask> runningStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
-        runningStatusTasks.add(task);
+        RSFutureTaskContainer runningStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        runningStatusTasks.put(task);
         submitTask(task);
     }
 
     private void enqueueSucceedAll(RSFutureTask task){
         this.status = RUNNING;
-        List<RSFutureTask> runningStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
-        runningStatusTasks.add(task);
+        RSFutureTaskContainer runningStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        runningStatusTasks.put(task);
         submitTask(task);
     }
 
     /**
      * 轮到当前generation执行，提交状态为NEW的所有的任务
-     * TODO:改善加锁方式，使锁的颗粒度更小
      */
     synchronized void fire(){
         status = RUNNING;
-        List<RSFutureTask> runningStatusTasks = new ArrayList<>();
+        RSFutureTaskContainer runningStatusTasks = new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.RUNNING);
         statusTaskMap.put(RSFutureTask.RSFutureStatus.RUNNING,runningStatusTasks);
 
-        List<RSFutureTask> newStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NEW);
-        List<RSFutureTask> runningStatusTask = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
-        while (newStatusTasks.size()>0){
-            RSFutureTask task = newStatusTasks.remove(0);
-            runningStatusTask.add(task);
+        RSFutureTaskContainer newStatusTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NEW);
+        RSFutureTask task;
+        while ((task=newStatusTasks.poll())!=null){
+            runningStatusTasks.put(task);
             submitTask(task);
         }
     }
@@ -153,7 +151,7 @@ class Generation {
      * class TasksContainer{
      * //remains!=remainTasks.size();
      *     AtomicInteger remains;
-     *     List<RSFutureTask> remainTasks
+     *     RSFutureTaskContainer remainTasks
      * }
      *  任务执行完成，需要对其记录，有可能执行rollback或者唤醒下一个generation的任务
      * @param task 执行完成的任务
@@ -191,22 +189,24 @@ class Generation {
         if(status==ABORT)
             return;
 
-        List<RSFutureTask> runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        RSFutureTaskContainer runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
         if(!runningTasks.remove(task))
             return;
 
         if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.NORMAL)){
-            statusTaskMap.put(RSFutureTask.RSFutureStatus.NORMAL,new ArrayList<>());
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.NORMAL,new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.NORMAL));
         }
 
-        List<RSFutureTask> normalTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NORMAL);
-        normalTasks.add(task);
-        //TODO:状态更新问题现在解决方案并不好，有待完善
-        if(runningTasks.size()==0){
-            if(status==RUNNING)
+        RSFutureTaskContainer normalTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.NORMAL);
+        normalTasks.put(task);
+        if(runningTasks.isEmpty()){
+            if(status==RUNNING) {
                 status = SUCCEEDALL;
-            else if(status==COMPLETING)
+                transactionBookKeeping.generationSucceedAll(this);
+            } else if(status==COMPLETING) {
                 status = FINISHED;
+                transactionBookKeeping.generationFinished(this);
+            }
         }
     }
 
@@ -218,7 +218,7 @@ class Generation {
         if(status==ABORT)
             return;
 
-        List<RSFutureTask> runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
+        RSFutureTaskContainer runningTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.RUNNING);
         if(!runningTasks.remove(task))
             return;
 
@@ -235,17 +235,21 @@ class Generation {
     private void taskDoneRollbackSuccessfully(RSFutureTask task){
         if(status!=ABORT)
             throw new RuntimeException("generation's status is not abort,rollback task received!");
-        List<RSFutureTask> rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
+        RSFutureTaskContainer rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
         if(!rollingBackTasks.remove(task)){
             return;
         }
 
         if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY)){
-            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY,new ArrayList<>());
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY,
+                    new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY));
         }
-        List<RSFutureTask> rollingBackSuccessfully = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY);
-        rollingBackSuccessfully.add(task);
-        //TODO:处理全部任务已经完成rollback，通知上一generation进行rollback
+        RSFutureTaskContainer rollingBackSuccessfully = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY);
+        rollingBackSuccessfully.put(task);
+
+        if(rollingBackTasks.isEmpty()){
+            transactionBookKeeping.generationRollbackSuccessfully(this);
+        }
     }
 
     /**
@@ -264,22 +268,30 @@ class Generation {
             task.rollbackReset();
             submitTask(task);
         }else{
-            if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLBACKFAILED))
-                statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKFAILED,new ArrayList<>());
-            List<RSFutureTask> rollbackFailedTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKFAILED);
-            rollbackFailedTasks.add(task);
-            //TODO:判断当前generation的rollback是否执行完成，进行下一阶段的rollback
+            if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLBACKFAILED)) {
+                statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLBACKFAILED,
+                        new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.ROLLBACKFAILED));
+            }
+
+            RSFutureTaskContainer rollbackFailedTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLBACKFAILED);
+            rollbackFailedTasks.put(task);
+            //回滚完成
+            RSFutureTaskContainer rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
+            if(rollingBackTasks.isEmpty()){
+                transactionBookKeeping.generationRollbackFailed(this);
+            }
         }
     }
 
     private void taskRollback(UnitTask unitTask){
         if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ROLLINGBACK)){
-            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLINGBACK,new ArrayList<>());
+            statusTaskMap.put(RSFutureTask.RSFutureStatus.ROLLINGBACK,
+                    new RSFutureTaskContainer(RSFutureTask.RSFutureStatus.ROLLINGBACK));
         }
 
         RSFutureTask rollbackFuture = generateRollbackFutureTask(unitTask);
-        List<RSFutureTask> rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
-        rollingBackTasks.add(rollbackFuture);
+        RSFutureTaskContainer rollingBackTasks = statusTaskMap.get(RSFutureTask.RSFutureStatus.ROLLINGBACK);
+        rollingBackTasks.put(rollbackFuture);
         submitTask(rollbackFuture);
     }
 
@@ -296,25 +308,28 @@ class Generation {
     }
 
     private void innerInvokeRollback(){
-        List<RSFutureTask> runningTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.RUNNING);
-        while (runningTasks.size()>0){
-            RSFutureTask task = runningTasks.remove(0);
+        RSFutureTaskContainer runningTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.RUNNING);
+        RSFutureTask task;
+        while ((task = runningTasks.poll())!=null){
             task.cancel(true);
             taskRollback(task.getUnitTask());
         }
 
-        List<RSFutureTask> normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
-        while (normalFinishedTasks!=null&&normalFinishedTasks.size()>0){
-            RSFutureTask task = normalFinishedTasks.remove(0);
+        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.NORMAL))
+            return;
+        RSFutureTaskContainer normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
+        while ((task = normalFinishedTasks.poll())!=null){
             taskRollback(task.getUnitTask());
         }
     }
 
     private void outerInvokeRollback(){
         this.status = ABORT;
-        List<RSFutureTask> normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
-        while (normalFinishedTasks!=null&&normalFinishedTasks.size()>0){
-            RSFutureTask task = normalFinishedTasks.remove(0);
+        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ABORT))
+            return;
+        RSFutureTaskContainer normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
+        RSFutureTask task;
+        while ((task = normalFinishedTasks.poll())!=null){
             taskRollback(task.getUnitTask());
         }
     }
@@ -350,6 +365,42 @@ class Generation {
 
     void setPrevGenerationId(Integer prevGenerationId) {
         this.prevGenerationId = prevGenerationId;
+    }
+
+
+    class RSFutureTaskContainer{
+
+        private final RSFutureTask.RSFutureStatus taskStatus;
+        private BlockingQueue<RSFutureTask> futureTasks;
+
+        RSFutureTaskContainer(RSFutureTask.RSFutureStatus status){
+            taskStatus = status;
+            futureTasks = new LinkedBlockingDeque<>();
+        }
+
+        boolean put(RSFutureTask futureTask){
+            if(futureTask.getStatus()!=taskStatus)
+                return false;
+            try {
+                futureTasks.put(futureTask);
+            } catch (InterruptedException e) {
+                put(futureTask);
+            }
+            return true;
+        }
+
+        boolean remove(RSFutureTask futureTask){
+            return futureTasks.remove(futureTask);
+        }
+
+        RSFutureTask poll(){
+            return futureTasks.poll();
+        }
+
+        boolean isEmpty(){
+            return futureTasks.isEmpty();
+        }
+
     }
 
 }
