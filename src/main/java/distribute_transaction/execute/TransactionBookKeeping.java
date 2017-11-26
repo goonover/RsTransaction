@@ -48,8 +48,8 @@ public class TransactionBookKeeping {
             Generation newGeneration = new Generation(task,this);
             newGeneration.setPrevGenerationId(maxGeneration);
             maxGeneration = newGeneration.getGenerationId();
-            max.setNextGenerationId(newGeneration.getGenerationId());
             generations.put(newGeneration.getGenerationId(),newGeneration);
+            max.setNextGenerationId(newGeneration.getGenerationId());
         }
 
         return true;
@@ -61,18 +61,39 @@ public class TransactionBookKeeping {
     }
 
     void generationSucceedAll(Generation generation){
-
+        //TODO:判断当前的TransactionService是否完成，如完成则代表事务正常执行完成
     }
 
     void generationFinished(Generation generation){
-
+        Generation nextGeneration = generations.get(generation.getNextGenerationId());
+        if(nextGeneration!=null){
+            nextGeneration.fire();
+        }
     }
 
-    void generationRollbackSuccessfully(Generation generation){
+    void generationRollbackCompleted(Generation generation,boolean success){
+        if(!success){
+            handleRollbackFailure(generation);
+        }
 
+        if(generation.getPrevGenerationId()==null){
+            rollbackFinish();
+        }else{
+            prevCallbackInvoke(generation);
+        }
     }
 
-    void generationRollbackFailed(Generation generation){
+    private void handleRollbackFailure(Generation generation){
+        //TODO:implement handleRollbackFailure
+    }
 
+    private void prevCallbackInvoke(Generation generation){
+        Generation prevGeneration = generations.get(generation.getPrevGenerationId());
+        if(prevGeneration!=null)
+            prevGeneration.rollback(false);
+    }
+
+    private void rollbackFinish(){
+        //TODO:implementRollbackFinish
     }
 }

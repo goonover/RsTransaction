@@ -36,6 +36,11 @@ public class RSFutureTask<T> extends FutureTask<T> {
         status = RSFutureStatus.NEW;
     }
 
+    RSFutureTask(Runnable runnable,RSFutureStatus status){
+        super(runnable,null);
+        this.status = status;
+    }
+
     @Override
     public void run() {
         status = RSFutureStatus.RUNNING;

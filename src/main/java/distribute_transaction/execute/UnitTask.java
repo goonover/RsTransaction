@@ -96,7 +96,11 @@ public abstract class UnitTask {
         }
     }
 
-    public void setGeneration(Generation generation) {
+    void setGeneration(Generation generation) {
         this.generation = generation;
+    }
+
+    Generation getGeneration() {
+        return generation;
     }
 }
