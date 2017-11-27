@@ -1,9 +1,12 @@
 package distribute_transaction.execute;
 
+import org.apache.log4j.Logger;
+
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static distribute_transaction.execute.Generation.GenerationStatus.*;
+import static distribute_transaction.execute.RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY;
 
 /**
  * 记录同一批次的单元任务{@link UnitTask}以及当当前的任务都完成
@@ -29,6 +32,8 @@ class Generation {
     private static ExecutorService executorService;
     //当前generation所属的bookKeeping
     private TransactionBookKeeping transactionBookKeeping;
+
+    Logger logger = Logger.getLogger(Generation.class);
 
     /**
      * generation的状态
@@ -137,14 +142,14 @@ class Generation {
      */
     private <T> RSFutureTask<T> generateFutureTask(UnitTask task){
         Callable<T> callable = task::run;
-        RSFutureTask<T> futureTask = new RSFutureTask<T>(callable);
+        RSFutureTask futureTask = RSFutureTask.createNormalTask(callable);
         futureTask.setUnitTask(task);
         return futureTask;
     }
 
     private RSFutureTask generateRollbackFutureTask(UnitTask task){
         Runnable runnable = task::rollback;
-        RSFutureTask futureTask = new RSFutureTask(runnable,null);
+        RSFutureTask futureTask = RSFutureTask.createRollbackTask(runnable,null);
         futureTask.setUnitTask(task);
         return futureTask;
     }
@@ -247,7 +252,7 @@ class Generation {
      * @param task  执行回滚操作成功的任务
      */
     private void taskDoneRollbackSuccessfully(RSFutureTask task){
-        if(status!=ABORT)
+        if(taskDoneInNormalStatus())
             throw new RuntimeException("generation's status is not abort,rollback task received!");
         RSFutureTaskContainer rollingBackTasks = getContainerOrPutNewOneIfAbsent(RSFutureTask.RSFutureStatus.ROLLINGBACK);
         if(!rollingBackTasks.remove(task)){
@@ -255,7 +260,7 @@ class Generation {
         }
 
         RSFutureTaskContainer rollingBackSuccessfully = 
-                getContainerOrPutNewOneIfAbsent(RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY);
+                getContainerOrPutNewOneIfAbsent(ROLLBACKSUCCESSFULLY);
         rollingBackSuccessfully.put(task);
 
         if(rollingBackTasks.downAndGet()==0){
@@ -273,7 +278,7 @@ class Generation {
      * @param task  回滚任务执行失败
      */
     private void taskDoneRollbackFailed(RSFutureTask task){
-        if(status!=ABORT)
+        if(taskDoneInNormalStatus())
             throw new RuntimeException("generation's status is not abort,rollback task received!");
 
         RSFutureTaskContainer rollingBackTasks =
@@ -283,7 +288,8 @@ class Generation {
 
         task.rollbackFailed();
         if(task.shouldRollback()){
-            task.rollbackReset();
+            UnitTask unitTask = task.getUnitTask();
+            task = generateRollbackFutureTask(unitTask);
             submitTask(task);
         }else{
             //只要出现一个回滚失败，generation就标志为回滚失败
@@ -323,8 +329,8 @@ class Generation {
          * 进行rollback处理的，均视为rollback成功处理
          */
         if(!unitTask.shouldRollback()){
-            RSFutureTask needNotRollback =
-                    new RSFutureTask(unitTask::rollback, RSFutureTask.RSFutureStatus.ROLLBACKSUCCESSFULLY);
+            Runnable runnable = unitTask::rollback;
+            RSFutureTask needNotRollback = RSFutureTask.createSpecTask(runnable,null,ROLLBACKSUCCESSFULLY);
             taskDoneRollbackSuccessfully(needNotRollback);
             return;
         }
@@ -367,8 +373,6 @@ class Generation {
 
     private void outerInvokeRollback(){
         this.status = ABORT;
-        if(!statusTaskMap.containsKey(RSFutureTask.RSFutureStatus.ABORT))
-            return;
         RSFutureTaskContainer normalFinishedTasks = statusTaskMap.remove(RSFutureTask.RSFutureStatus.NORMAL);
         RSFutureTask task;
         while ((task = normalFinishedTasks.poll())!=null){
@@ -449,8 +453,6 @@ class Generation {
         }
 
         boolean put(RSFutureTask futureTask){
-            if(futureTask.getStatus()!=taskStatus)
-                return false;
             try {
                 futureTasks.put(futureTask);
             } catch (InterruptedException e) {

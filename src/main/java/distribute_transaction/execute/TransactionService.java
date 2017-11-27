@@ -6,12 +6,18 @@ package distribute_transaction.execute;
  * TODO:集成数据库连接管理等
  * Created by swqsh on 2017/11/10.
  */
-public abstract class TransactionService {
+public abstract class TransactionService implements Runnable{
 
     TransactionBookKeeping bookKeeping;
 
+    abstract public void run();
+
     public boolean submit(UnitTask unitTask){
         return this.bookKeeping.submitUnitTask(unitTask);
+    }
+
+    void setBookKeeping(TransactionBookKeeping bookKeeping){
+        this.bookKeeping = bookKeeping;
     }
 
 }

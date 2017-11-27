@@ -41,17 +41,15 @@ public abstract class UnitTask {
     abstract public <T> T run();
 
     /**
-     * 当run方法执行过程中出现RsAbortException时，将会通知generation
+     * 当run方法执行过程中出现RSAbortException时，将会通知generation
      * 回滚所有任务，回滚的实现通过调用rollback实现，使用者可以重载
      * rollback，实现自己的回滚函数
      */
-    public void rollback(){}
+    abstract void rollback();
 
-    public void rollbackFailed(){}
+    abstract void rollbackFailed();
 
-    public boolean shouldRollback(){
-        return false;
-    }
+    abstract boolean shouldRollback();
 
     /**
      *  返回run方法的执行结果
@@ -68,20 +66,28 @@ public abstract class UnitTask {
         this.priority = priority;
     }
 
+    void setGeneration(Generation generation) {
+        this.generation = generation;
+    }
+
+    Generation getGeneration() {
+        return generation;
+    }
+
     /**
      * 当在运行任务期间，捕捉到此类型的任务，即表明用户想要放弃该事务，
      * 执行器应当执行回滚操作
      */
-    public static class RsAbortException extends RuntimeException{
+    public static class RSAbortException extends RuntimeException{
 
         private static final long serialVersionUID = -1;
         private String message = "no message specified";
 
-        public RsAbortException(String message) {
+        public RSAbortException(String message) {
             this.message = message;
         }
 
-        public RsAbortException(Throwable cause, String message) {
+        public RSAbortException(Throwable cause, String message) {
             super(cause);
             if(cause.getMessage()!=null){
                 this.message = cause.getMessage();
@@ -96,11 +102,32 @@ public abstract class UnitTask {
         }
     }
 
-    void setGeneration(Generation generation) {
-        this.generation = generation;
+    /**
+     * 在任务回滚阶段期间，出现该异常表明回滚失败，如果shouldRollback为真
+     * 的话，进行回滚
+     */
+    public static class RSRollbackException extends RuntimeException{
+
+        private static final long serialVersionUID = -2;
+        private String message = "no message specified";
+
+        public RSRollbackException(String message) {
+            this.message = message;
+        }
+
+        public RSRollbackException(Throwable cause, String message) {
+            super(cause);
+            if(cause.getMessage()!=null){
+                this.message = cause.getMessage();
+            }else if(cause.getCause()!=null){
+                this.message = cause.getCause().getMessage();
+            }
+        }
+
+        @Override
+        public String getMessage() {
+            return message;
+        }
     }
 
-    Generation getGeneration() {
-        return generation;
-    }
 }

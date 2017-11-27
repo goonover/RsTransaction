@@ -1,6 +1,7 @@
 package distribute_transaction.execute;
 
 import distribute_transaction.scheduler.Transaction;
+import org.apache.log4j.Logger;
 
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -18,14 +19,16 @@ public class TransactionBookKeeping {
     Transaction transaction;
     TransactionService transactionService;
 
-    HashMap<Integer,Generation> generations;
+    HashMap<Integer,Generation> generations = new HashMap<>();
     Integer currentGeneration;
     Integer maxGeneration;
+    Logger logger = Logger.getLogger(TransactionBookKeeping.class);
 
     public TransactionBookKeeping(Transaction transaction, TransactionService transactionService) {
         this.bookKeepingId = globalBookKeepingId.getAndIncrement();
         this.transaction = transaction;
         this.transactionService = transactionService;
+        transactionService.setBookKeeping(this);
     }
 
     boolean submitUnitTask(UnitTask task){
@@ -51,6 +54,7 @@ public class TransactionBookKeeping {
             generations.put(newGeneration.getGenerationId(),newGeneration);
             max.setNextGenerationId(newGeneration.getGenerationId());
         }
+        logger.info("after submit first task success");
 
         return true;
     }
@@ -62,6 +66,7 @@ public class TransactionBookKeeping {
 
     void generationSucceedAll(Generation generation){
         //TODO:判断当前的TransactionService是否完成，如完成则代表事务正常执行完成
+        logger.info(this+" completeSuccessfully");
     }
 
     void generationFinished(Generation generation){
@@ -85,6 +90,7 @@ public class TransactionBookKeeping {
 
     private void handleRollbackFailure(Generation generation){
         //TODO:implement handleRollbackFailure
+        logger.info(this+" rollback failed");
     }
 
     private void prevCallbackInvoke(Generation generation){
@@ -95,5 +101,6 @@ public class TransactionBookKeeping {
 
     private void rollbackFinish(){
         //TODO:implementRollbackFinish
+        logger.info(this+" rollbackFinish");
     }
 }

@@ -37,6 +37,8 @@ public class Transaction {
 
     private void transactionInit(){
         state = State.WAITING;
+        if(applyRanges==null)
+            return;
         for(Range range:applyRanges){
             range.setTransaction(this);
         }
