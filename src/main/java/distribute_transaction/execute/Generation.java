@@ -115,7 +115,11 @@ class Generation {
      * 这个方法同步对性能影响不大，可以直接保留
      */
     synchronized void fire(){
-        status = RUNNING;
+        if(nextGenerationId!=null) {
+            status = COMPLETING;
+        } else {
+            status = RUNNING;
+        }
         RSFutureTaskContainer runningStatusTasks = getContainerOrPutNewOneIfAbsent(RSFutureTask.RSFutureStatus.RUNNING);
         RSFutureTaskContainer newStatusTasks = getContainerOrPutNewOneIfAbsent(RSFutureTask.RSFutureStatus.NEW);
         RSFutureTask task;

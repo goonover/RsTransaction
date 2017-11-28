@@ -54,7 +54,6 @@ public class TransactionBookKeeping {
             generations.put(newGeneration.getGenerationId(),newGeneration);
             max.setNextGenerationId(newGeneration.getGenerationId());
         }
-        logger.info("after submit first task success");
 
         return true;
     }
@@ -76,9 +75,16 @@ public class TransactionBookKeeping {
         }
     }
 
+    /**
+     * 一个generation的task回调执行完成，如果出现回调错误，则停止继续执行
+     * 其他generation的回调，作为异常情况让使用者处理
+     * @param generation    回调执行完的generation
+     * @param success   回调过程中是否出现了{@link distribute_transaction.execute.UnitTask.RSRollbackException}
+     */
     void generationRollbackCompleted(Generation generation,boolean success){
         if(!success){
             handleRollbackFailure(generation);
+            return;
         }
 
         if(generation.getPrevGenerationId()==null){
@@ -90,7 +96,7 @@ public class TransactionBookKeeping {
 
     private void handleRollbackFailure(Generation generation){
         //TODO:implement handleRollbackFailure
-        logger.info(this+" rollback failed");
+        logger.info(generation+" rollback failed");
     }
 
     private void prevCallbackInvoke(Generation generation){

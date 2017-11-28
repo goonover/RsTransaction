@@ -11,7 +11,6 @@ import static distribute_transaction.execute.RSFutureTask.RSFutureStatus.*;
  */
 public class RSFutureTask<T> extends FutureTask<T> {
 
-    volatile boolean isAbort = false;
     Throwable throwable;
 
     private volatile RSFutureStatus status;
@@ -43,7 +42,7 @@ public class RSFutureTask<T> extends FutureTask<T> {
     }
 
     public static <T> RSFutureTask createRollbackTask(Runnable runnable,T result){
-        return new RSFutureTask(runnable,result,ROLLBACKNEW);
+        return new RSFutureTask<T>(runnable,result,ROLLBACKNEW);
     }
 
     public static<T> RSFutureTask<T> createSpecTask(Callable<T> callable,RSFutureStatus status){

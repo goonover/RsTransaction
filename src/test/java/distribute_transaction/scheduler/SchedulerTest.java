@@ -31,7 +31,7 @@ public class SchedulerTest {
 
     @Test
     public void fireTransaction() throws Exception {
-        Transaction transaction = new Transaction(1,null,"requestStr");
+        Transaction transaction = new TransactionImpl(1,null,scheduler);
         scheduler.fireTransaction(transaction);
         TimeUnit.SECONDS.sleep(5);
     }
